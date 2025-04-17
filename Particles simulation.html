@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Sphere Packing Simulation</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 10px;
+            background-color: #f0f0f0;
+            overflow: hidden; /* Prevent scrollbars from body */
+        }
+        #controls {
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 10px; /* Reduced margin */
+            width: 95%;
+            max-width: 1000px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 10px;
+            align-items: start;
+            z-index: 10; /* Keep controls above canvas */
+            position: relative; /* Needed for z-index */
+        }
+        #controls label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        #controls input[type="number"],
+        #controls textarea,
+        #controls button {
+            width: 95%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+         #controls textarea {
+            height: 120px; /* Adjusted height */
+            font-family: monospace;
+            resize: vertical;
+            grid-column: 1 / -1; /* Span full width */
+         }
+        #controls button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            width: auto;
+            padding: 10px 15px;
+        }
+        #controls button:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+         #controls button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #simulation-container {
+            width: 95%;
+            max-width: 1000px; /* Match controls */
+            height: 600px; /* Fixed height for canvas */
+            position: relative;
+            border: 1px solid #333;
+            background-color: #111; /* Dark background for 3D */
+        }
+        #simulationCanvas { /* Style the canvas directly */
+            display: block; /* Remove potential extra space */
+            width: 100%;
+            height: 100%;
+        }
+        #status {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            color: #000;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-weight: bold;
+            z-index: 5; /* Below controls but above canvas elements */
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+            margin-top: 5px;
+            grid-column: 1 / -1; /* Span full width */
+        }
+        .info-text {
+             font-size: 0.8em; margin-top: 0; color: #555; grid-column: 1 / -1;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>3D Sphere Packing Simulation</h1>
+
+    <div id="controls">
+        <div>
+            <label for="boxWidth">Box Width:</label>
+            <input type="number" id="boxWidth" value="10" min="1" step="0.5">
+        </div>
+         <div>
+            <label for="boxDepth">Box Depth:</label>
+            <input type="number" id="boxDepth" value="10" min="1" step="0.5">
+        </div>
+        <div>
+            <label for="gravityY">Gravity (Y):</label>
+            <input type="number" id="gravityY" value="-9.81" step="0.1">
+        </div>
+        <div>
+            <label for="maxSpheres">Max Spheres:</label>
+            <input type="number" id="maxSpheres" value="150" min="10">
+        </div>
+         <div>
+            <label for="spawnInterval">Spawn Interval (ms):</label>
+            <input type="number" id="spawnInterval" value="150" min="10">
+         </div>
+         <div> <!-- Placeholder for alignment --> </div>
+
+        <label for="sphereDefs">Sphere Definitions (JSON format):</label>
+        <textarea id="sphereDefs">
+[
+  { "ratio": 0.7, "radius": 0.5, "color": "rgba(0, 100, 255, 0.9)", "density": 1000 },
+  { "ratio": 0.3, "radius": 1.0, "color": "rgba(255, 50, 0, 0.9)", "density": 1500 }
+]
+        </textarea>
+        <div id="jsonError" class="error"></div>
+        <p class="info-text">
+            Define sphere types: Radius/Density are in arbitrary but consistent units (e.g., meters, kg/m^3). Color uses CSS rgba().
+        </p>
+
+        <div style="grid-column: 1 / -1; display: flex; gap: 10px;">
+           <button id="startButton">Start / Restart</button>
+           <button id="stopButton" disabled>Stop Spawning</button>
+           <button id="freezeButton" disabled>Freeze Physics</button>
+        </div>
+    </div>
+
+    <div id="simulation-container">
+        <div id="status">Status: Idle</div>
+        <canvas id="simulationCanvas"></canvas>
+    </div>
+
+    <!-- Import maps polyfill -->
+    <!-- Remove this if your browser supports import maps natively -->
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.157.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.157.0/examples/jsm/",
+          "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js",
+          "cannon-es-debugger": "https://unpkg.com/cannon-es-debugger@1.0.0/dist/cannon-es-debugger.js"
+        }
+      }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import * as CANNON from 'cannon-es';
+        // Optional: For visualizing physics bodies
+        // import CannonDebugger from 'cannon-es-debugger';
+
+        // --- Global Variables ---
+        let scene, camera, renderer, controls;
+        let world, cannonDebugger; // Physics world
+        let clock;
+        let spawnIntervalId = null;
+        let animationFrameId = null;
+        let spheresSpawned = 0;
+        let maxSpheres = 150;
+        let spawnIntervalTime = 150;
+        let sphereTypes = [];
+        let totalRatio = 0;
+        let boxWidth = 10, boxDepth = 10, boxHeight = 20; // Box dimensions (height is visual limit)
+        let gravityY = -9.81;
+        const wallThickness = 0.5; // Physics wall thickness
+        const wallHeight = 25; // Physics wall height
+
+        let physicsObjects = []; // To sync physics bodies and three meshes {mesh, body}
+        let isFrozen = false;
+        let stabilityCounter = 0;
+        const stabilityThreshold = 0.05; // Avg speed threshold (adjust based on units/gravity)
+        const stabilityChecksRequired = 100;
+        let lastDensity = 0;
+		let defaultMaterial, wallMaterial, sphereMaterial;
+
+        // DOM Elements
+        const canvas = document.getElementById('simulationCanvas');
+        const container = document.getElementById('simulation-container');
+        const statusDiv = document.getElementById('status');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const freezeButton = document.getElementById('freezeButton');
+        const boxWidthInput = document.getElementById('boxWidth');
+        const boxDepthInput = document.getElementById('boxDepth');
+        const gravityInput = document.getElementById('gravityY');
+        const maxSpheresInput = document.getElementById('maxSpheres');
+        const spawnIntervalInput = document.getElementById('spawnInterval');
+        const sphereDefsInput = document.getElementById('sphereDefs');
+        const jsonErrorDiv = document.getElementById('jsonError');
+
+        // --- Initialization ---
+        function init() {
+            console.log("init() called");
+            clock = new THREE.Clock();
+
+            // --- Three.js Setup ---
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xffffff); // White background
+
+            const aspect = container.clientWidth / container.clientHeight;
+            camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 1000);
+            camera.position.set(boxWidth * 1.5, boxHeight * 0.7, boxDepth * 1.5); // Adjust camera position
+            camera.lookAt(0, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadows
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(15, 30, 20);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 1024;
+            directionalLight.shadow.mapSize.height = 1024;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 100;
+             // Adjust shadow camera bounds based on expected scene size
+            const shadowCamSize = Math.max(boxWidth, boxDepth) * 1.5;
+            directionalLight.shadow.camera.left = -shadowCamSize;
+            directionalLight.shadow.camera.right = shadowCamSize;
+            directionalLight.shadow.camera.top = shadowCamSize;
+            directionalLight.shadow.camera.bottom = -shadowCamSize;
+
+            scene.add(directionalLight);
+            scene.add(directionalLight.target); // Target for the light
+
+            // Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.target.set(0, 0, 0); // Focus controls on the origin initially
+
+            // --- Event Listeners ---
+            startButton.onclick = startSimulation;
+            stopButton.onclick = stopSpawning;
+            freezeButton.onclick = toggleFreeze;
+            window.addEventListener('resize', onWindowResize);
+
+            statusDiv.textContent = 'Status: Ready. Press Start.';
+            stopButton.disabled = true;
+            freezeButton.disabled = true;
+
+            console.log("init() finished");
+        }
+
+        function onWindowResize() {
+            if (!renderer || !camera || !container) return;
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        }
+
+        // --- Simulation Control ---
+        function startSimulation() {
+            console.log("Starting simulation...");
+            statusDiv.textContent = 'Status: Initializing...';
+            jsonErrorDiv.textContent = '';
+            isFrozen = false; // Ensure not frozen on start
+
+            // --- Cleanup previous run ---
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            if (spawnIntervalId) {
+                clearInterval(spawnIntervalId);
+                spawnIntervalId = null;
+            }
+            // Clear physics objects and Three.js meshes
+            physicsObjects.forEach(obj => {
+                if (obj.mesh) scene.remove(obj.mesh);
+                if (obj.body) world.removeBody(obj.body);
+            });
+            physicsObjects = [];
+            spheresSpawned = 0;
+            stabilityCounter = 0;
+
+            // Clear existing static bodies (walls/floor) if world exists
+            if (world) {
+                 const bodiesToRemove = world.bodies.filter(body => body.type === CANNON.Body.STATIC);
+                 bodiesToRemove.forEach(body => world.removeBody(body));
+            }
+
+
+            // --- Read and Validate Inputs ---
+            try {
+                boxWidth = parseFloat(boxWidthInput.value);
+                boxDepth = parseFloat(boxDepthInput.value);
+                gravityY = parseFloat(gravityInput.value);
+                maxSpheres = parseInt(maxSpheresInput.value, 10);
+                spawnIntervalTime = parseInt(spawnIntervalInput.value, 10);
+
+                if (isNaN(boxWidth) || boxWidth <= 0) throw new Error("Invalid Box Width.");
+                if (isNaN(boxDepth) || boxDepth <= 0) throw new Error("Invalid Box Depth.");
+                if (isNaN(gravityY)) throw new Error("Invalid Gravity.");
+                if (isNaN(maxSpheres) || maxSpheres < 1) throw new Error("Invalid Max Spheres.");
+                if (isNaN(spawnIntervalTime) || spawnIntervalTime < 10) throw new Error("Invalid Spawn Interval.");
+
+                // Parse Sphere Definitions
+                sphereTypes = JSON.parse(sphereDefsInput.value);
+                 if (!Array.isArray(sphereTypes) || sphereTypes.length === 0) {
+                    throw new Error("Sphere definitions must be a non-empty array.");
+                }
+                totalRatio = 0;
+                sphereTypes.forEach((type, index) => {
+                    if (typeof type.ratio !== 'number' || type.ratio <= 0 || type.ratio > 1) throw new Error(`Invalid ratio for type ${index+1}`);
+                    if (typeof type.radius !== 'number' || type.radius <= 0) throw new Error(`Invalid radius for type ${index+1}`);
+                    if (typeof type.color !== 'string') throw new Error(`Invalid color for type ${index+1}`);
+                    type.density = (typeof type.density === 'number' && type.density > 0) ? type.density : 1000; // Default density
+                    totalRatio += type.ratio;
+                });
+                 // Normalize ratios
+                 if (Math.abs(totalRatio - 1.0) > 1e-6) {
+                    console.warn(`Ratios sum to ${totalRatio}, normalizing...`);
+                    sphereTypes.forEach(type => type.ratio /= totalRatio);
+                    totalRatio = 1.0;
+                }
+
+            } catch (e) {
+                jsonErrorDiv.textContent = `Error: ${e.message}`;
+                statusDiv.textContent = 'Status: Error in inputs or definition.';
+                console.error("Input/JSON Validation Error:", e);
+                startButton.textContent = "Restart Simulation";
+                stopButton.disabled = true;
+                freezeButton.disabled = true;
+                return;
+            }
+
+            // --- Setup Cannon-es World ---
+            world = new CANNON.World();
+            world.gravity.set(0, gravityY, 0);
+            world.broadphase = new CANNON.NaiveBroadphase(); // Simple broadphase
+            world.solver.iterations = 10; // Adjust solver iterations for stability/performance
+
+            // Define materials
+            defaultMaterial = new CANNON.Material("default");
+            wallMaterial = new CANNON.Material("wall");
+            sphereMaterial = new CANNON.Material("sphere");
+
+            // Define contact behavior
+            const defaultContactMaterial = new CANNON.ContactMaterial(
+                defaultMaterial, defaultMaterial,
+                { friction: 0.4, restitution: 0.2 } // Default friction and bounciness
+            );
+             const sphereWallContact = new CANNON.ContactMaterial(
+                sphereMaterial, wallMaterial,
+                { friction: 0.1, restitution: 0.3 } // Lower friction against walls
+            );
+             const sphereSphereContact = new CANNON.ContactMaterial(
+                sphereMaterial, sphereMaterial,
+                { friction: 0.5, restitution: 0.3 } // Friction between spheres
+            );
+
+            world.addContactMaterial(defaultContactMaterial);
+            world.addContactMaterial(sphereWallContact);
+            world.addContactMaterial(sphereSphereContact);
+            world.defaultContactMaterial = defaultContactMaterial; // Set as default
+
+            // --- Create Box Boundaries (Physics) ---
+            const groundBody = new CANNON.Body({ mass: 0, material: wallMaterial }); // Static body
+            groundBody.addShape(new CANNON.Plane());
+            groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0); // Rotate plane to be horizontal
+            groundBody.position.set(0, 0, 0); // Floor at y=0
+            world.addBody(groundBody);
+
+            // Walls (using planes for infinite walls)
+            const wallOptions = { mass: 0, material: wallMaterial };
+            const wallShape = new CANNON.Plane();
+
+            // Left (-X)
+            const leftWall = new CANNON.Body(wallOptions);
+            leftWall.addShape(wallShape);
+            leftWall.quaternion.setFromEuler(0, Math.PI / 2, 0);
+            leftWall.position.set(-boxWidth / 2, 0, 0);
+            world.addBody(leftWall);
+
+            // Right (+X)
+            const rightWall = new CANNON.Body(wallOptions);
+            rightWall.addShape(wallShape);
+            rightWall.quaternion.setFromEuler(0, -Math.PI / 2, 0);
+            rightWall.position.set(boxWidth / 2, 0, 0);
+            world.addBody(rightWall);
+
+            // Back (-Z)
+            const backWall = new CANNON.Body(wallOptions);
+            backWall.addShape(wallShape);
+            // No rotation needed for Z plane
+            backWall.position.set(0, 0, -boxDepth / 2);
+            world.addBody(backWall);
+
+            // Front (+Z)
+            const frontWall = new CANNON.Body(wallOptions);
+            frontWall.addShape(wallShape);
+            frontWall.quaternion.setFromEuler(0, Math.PI, 0); // Rotate 180 degrees
+            frontWall.position.set(0, 0, boxDepth / 2);
+            world.addBody(frontWall);
+
+             // Optional: Add visual representation of the box boundaries
+            createVisualBoundaries();
+
+             // Optional: Initialize Cannon Debugger
+            // cannonDebugger = new CannonDebugger(scene, world, {
+            //     color: 0x00ff00, // Wireframe color
+            //     scale: 1.0,      // Adjust scale if needed
+            // });
+
+            // --- Start Simulation ---
+            controls.target.set(0, boxHeight / 4, 0); // Center camera target slightly higher
+            controls.update();
+
+            animate(); // Start the animation loop
+
+            spawnNextSphere(); // Spawn the first one immediately
+            spawnIntervalId = setInterval(spawnNextSphere, spawnIntervalTime);
+
+            startButton.textContent = "Restart Simulation";
+            stopButton.disabled = false;
+            freezeButton.disabled = false;
+            freezeButton.textContent = "Freeze Physics";
+            statusDiv.textContent = `Status: Spawning sphere 1/${maxSpheres}...`;
+        }
+
+        function createVisualBoundaries() {
+             // Simple visual floor plane
+            const floorGeometry = new THREE.PlaneGeometry(boxWidth, boxDepth);
+            const floorMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                side: THREE.DoubleSide, // Render both sides
+                transparent: true,
+                opacity: 0.1
+            });
+            const floorMesh = new THREE.Mesh(floorGeometry, floorMaterial);
+            floorMesh.rotation.x = -Math.PI / 2; // Rotate to horizontal
+            floorMesh.position.y = 0.01; // Slightly above physics plane to avoid z-fighting
+            floorMesh.receiveShadow = true;
+            scene.add(floorMesh);
+
+             // Optional: Add thin visual walls if needed (can clutter the view)
+             /*
+             const wallGeo = new THREE.BoxGeometry(boxWidth, wallHeight, 0.1);
+             const wallMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, transparent: true, opacity: 0.3 });
+             const wall1 = new THREE.Mesh(wallGeo, wallMat); wall1.position.set(0, wallHeight/2, -boxDepth/2); scene.add(wall1);
+             const wall2 = new THREE.Mesh(wallGeo, wallMat); wall2.position.set(0, wallHeight/2, boxDepth/2); scene.add(wall2);
+             const wall3Geo = new THREE.BoxGeometry(0.1, wallHeight, boxDepth);
+             const wall3 = new THREE.Mesh(wall3Geo, wallMat); wall3.position.set(-boxWidth/2, wallHeight/2, 0); scene.add(wall3);
+             const wall4 = new THREE.Mesh(wall3Geo, wallMat); wall4.position.set(boxWidth/2, wallHeight/2, 0); scene.add(wall4);
+             */
+        }
+
+
+        function stopSpawning() {
+             if (spawnIntervalId) {
+                clearInterval(spawnIntervalId);
+                spawnIntervalId = null;
+                statusDiv.textContent = `Status: Spawning stopped (${spheresSpawned} spheres). Waiting for stability...`;
+                stopButton.disabled = true;
+                console.log("Spawning stopped by user.");
+            }
+        }
+
+        function toggleFreeze() {
+            isFrozen = !isFrozen;
+            if (isFrozen) {
+                freezeButton.textContent = "Unfreeze Physics";
+                statusDiv.textContent = `Status: Physics Frozen (${spheresSpawned} spheres). Density: ${lastDensity.toFixed(4)}`;
+                console.log("Physics Frozen");
+                // Optional: Could store velocities here if you want to restore them later
+            } else {
+                freezeButton.textContent = "Freeze Physics";
+                statusDiv.textContent = `Status: Resumed. Waiting for stability...`;
+                console.log("Physics Unfrozen");
+                // Wake up all dynamic bodies
+                physicsObjects.forEach(obj => {
+                    if (obj.body && obj.body.type === CANNON.Body.DYNAMIC) {
+                        obj.body.wakeUp();
+                    }
+                });
+            }
+        }
+
+        // --- Sphere Spawning ---
+        function spawnNextSphere() {
+            if (spheresSpawned >= maxSpheres || !world) { // Added !world check
+                stopSpawning();
+                if (spheresSpawned >= maxSpheres) {
+                    statusDiv.textContent = `Status: Max spheres (${maxSpheres}) reached. Waiting for stability...`;
+                }
+                return;
+            }
+
+            // Choose sphere type based on ratio
+            let random = Math.random();
+            let cumulativeRatio = 0;
+            let selectedType = null;
+            for (const type of sphereTypes) {
+                cumulativeRatio += type.ratio;
+                if (random < cumulativeRatio) {
+                    selectedType = type;
+                    break;
+                }
+            }
+            if (!selectedType) selectedType = sphereTypes[sphereTypes.length - 1];
+
+            // Spawn position (random x/z at the top)
+            const paddingFactor = 1.1; // Ensure spawn point isn't exactly on edge
+            const spawnX = (Math.random() - 0.5) * (boxWidth - selectedType.radius * 2 * paddingFactor);
+            const spawnZ = (Math.random() - 0.5) * (boxDepth - selectedType.radius * 2 * paddingFactor);
+            const spawnY = boxHeight * 0.9 + Math.random() * boxHeight * 0.1; // Spawn high up
+
+            // --- Create Physics Body ---
+            const sphereShape = new CANNON.Sphere(selectedType.radius);
+            const sphereVolume = (4/3) * Math.PI * Math.pow(selectedType.radius, 3);
+            const sphereMass = sphereVolume * selectedType.density;
+
+            const sphereBody = new CANNON.Body({
+                mass: sphereMass,
+                position: new CANNON.Vec3(spawnX, spawnY, spawnZ),
+                shape: sphereShape,
+                material: sphereMaterial || defaultMaterial // Use sphereMaterial if defined
+            });
+            world.addBody(sphereBody);
+
+            // --- Create Visual Mesh ---
+            const sphereGeometry = new THREE.SphereGeometry(selectedType.radius, 32, 16); // Segments for smoothness
+
+            // Parse RGBA color string for Three.js
+            let color = new THREE.Color(0xffffff); // Default white
+            let opacity = 1.0;
+            let transparent = false;
+            const rgbaMatch = selectedType.color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+            if (rgbaMatch) {
+                color.setRGB(parseInt(rgbaMatch[1])/255, parseInt(rgbaMatch[2])/255, parseInt(rgbaMatch[3])/255);
+                if (rgbaMatch[4] !== undefined) {
+                    opacity = parseFloat(rgbaMatch[4]);
+                    if (opacity < 1.0) transparent = true;
+                }
+            } else {
+                 try { color.set(selectedType.color); } catch (e) { console.warn("Could not parse color:", selectedType.color)}
+            }
+
+            const sphereMeshMaterial = new THREE.MeshStandardMaterial({
+                color: color,
+                metalness: 0.3,
+                roughness: 0.6,
+                transparent: transparent,
+                opacity: opacity
+            });
+            const sphereMesh = new THREE.Mesh(sphereGeometry, sphereMeshMaterial);
+            sphereMesh.castShadow = true;
+            sphereMesh.receiveShadow = true; // Spheres can receive shadows from others
+            sphereMesh.position.copy(sphereBody.position); // Initial position sync
+            scene.add(sphereMesh);
+
+            // Link mesh and body
+            physicsObjects.push({ mesh: sphereMesh, body: sphereBody, radius: selectedType.radius });
+
+            spheresSpawned++;
+
+            if (spawnIntervalId && !isFrozen) { // Only update status if still spawning and not frozen
+                 statusDiv.textContent = `Status: Spawning sphere ${spheresSpawned}/${maxSpheres}...`;
+            }
+        }
+
+        // --- Animation Loop ---
+        function animate() {
+            animationFrameId = requestAnimationFrame(animate);
+
+            const deltaTime = clock.getDelta();
+
+            // Step the physics world only if not frozen
+            if (!isFrozen && world) {
+                world.step(1 / 60, deltaTime, 3); // Fixed timestep, delta time, max sub-steps
+
+                // Update visual meshes from physics bodies
+                physicsObjects.forEach(obj => {
+                    if (obj.mesh && obj.body) {
+                        obj.mesh.position.copy(obj.body.position);
+                        obj.mesh.quaternion.copy(obj.body.quaternion);
+                    }
+                });
+
+                // Update Cannon Debugger if used
+                // if (cannonDebugger) cannonDebugger.update();
+
+                 // Check stability and calculate density periodically
+                 // Run less frequently than every frame maybe?
+                 if (spheresSpawned > 0 && animationFrameId % 5 === 0) { // Check every 5 frames approx
+                      checkStabilityAndCalculateDensity();
+                 }
+
+            } else if (isFrozen) {
+                 // Keep rendering but don't step physics
+            }
+
+            controls.update(); // Update orbit controls
+            renderer.render(scene, camera);
+        }
+
+         // --- Stability Check and Density Calculation ---
+        function checkStabilityAndCalculateDensity() {
+            if (!world || physicsObjects.length === 0) return;
+
+            const dynamicSpheres = physicsObjects.filter(obj => obj.body && obj.body.type === CANNON.Body.DYNAMIC);
+            if (dynamicSpheres.length === 0) return; // No moving spheres
+
+            let totalVelocitySq = 0;
+            let minY = Infinity; // Start high
+            let maxY = -Infinity; // Start low
+            let totalSphereVolume = 0;
+
+            dynamicSpheres.forEach(obj => {
+                const vel = obj.body.velocity;
+                totalVelocitySq += vel.lengthSquared();
+
+                const sphereTop = obj.body.position.y + obj.radius;
+                const sphereBottom = obj.body.position.y - obj.radius;
+                if (sphereBottom < minY) minY = sphereBottom;
+                if (sphereTop > maxY) maxY = sphereTop;
+
+                totalSphereVolume += (4/3) * Math.PI * Math.pow(obj.radius, 3);
+            });
+
+            const avgVelocity = Math.sqrt(totalVelocitySq / dynamicSpheres.length);
+
+             // Calculate current density
+            minY = Math.max(minY, 0); // Don't go below floor
+            const packedHeight = maxY - minY;
+            let currentDensity = 0;
+            if (packedHeight > 0 && boxWidth > 0 && boxDepth > 0) {
+                const boundingBoxVolume = boxWidth * boxDepth * packedHeight;
+                currentDensity = totalSphereVolume / boundingBoxVolume;
+            }
+            lastDensity = currentDensity; // Store for display when frozen
+
+
+            // Check for stability only if spawning is finished and not frozen
+            if (!spawnIntervalId && !isFrozen && spheresSpawned > 0) {
+                if (avgVelocity < stabilityThreshold) {
+                    stabilityCounter++;
+                } else {
+                    stabilityCounter = 0; // Reset if movement increases
+                }
+
+                if (stabilityCounter >= stabilityChecksRequired) {
+                     // Stable!
+                     console.log("Simulation stable.");
+                     statusDiv.textContent = `Status: Stable. Final Packing Density: ${currentDensity.toFixed(4)}`;
+                     // Optionally freeze automatically:
+                     // toggleFreeze();
+                     // freezeButton.disabled = true; // Disable further freezing maybe?
+                     stabilityCounter = 0; // Prevent continuous logging
+
+                } else if (stabilityCounter > 0) {
+                     statusDiv.textContent = `Status: Settling... (Stability ${stabilityCounter}/${stabilityChecksRequired}, Avg Vel: ${avgVelocity.toFixed(3)}, Density ~${currentDensity.toFixed(4)})`;
+                } else { // Spawning finished but not stable yet
+                     statusDiv.textContent = `Status: Waiting for stability... (Avg Vel: ${avgVelocity.toFixed(3)}, Density ~${currentDensity.toFixed(4)})`;
+                }
+            } else if (spawnIntervalId && !isFrozen) {
+                 // Still spawning, show approximate density
+                 statusDiv.textContent = `Status: Spawning ${spheresSpawned}/${maxSpheres}... (Density ~${currentDensity.toFixed(4)})`;
+            } else if (isFrozen) {
+                 // Status is handled by toggleFreeze() when frozen
+            }
+        }
+
+        // --- Run on Load ---
+        init();
+
+    </script>
+
+</body>
+</html>
