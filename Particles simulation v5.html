@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D/2D Nanoparticle Packing Simulation</title>
+    <style>
+        /* --- Base Styles --- */
+        body {
+            font-family: sans-serif; display: flex; flex-direction: column;
+            align-items: center; margin: 0; padding: 20px; background-color: #f0f0f0;
+        }
+        #controls {
+            background-color: #fff; padding: 20px; border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px;
+            width: 95%; max-width: 1100px; display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px; align-items: start; z-index: 10; position: relative;
+        }
+        #controls label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.9em; }
+        #controls input[type="number"], #controls input[type="text"],
+        #controls input[type="range"], #controls select, #controls button {
+            width: 95%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc;
+            border-radius: 4px; box-sizing: border-box; font-size: 0.9em;
+        }
+        #controls input[type="range"] { padding: 0; }
+        #controls button {
+            background-color: #007bff; color: white; border: none; cursor: pointer;
+            transition: background-color 0.2s; width: auto; padding: 10px 15px;
+        }
+        #controls button:hover:not(:disabled) { background-color: #0056b3; }
+        #controls button:disabled { background-color: #cccccc; cursor: not-allowed; }
+
+        /* --- Section Specific Styles --- */
+        #sphereTypesContainer {
+            grid-column: 1 / -1; border: 1px solid #eee; padding: 15px;
+            margin-top: 10px; border-radius: 5px; display: flex;
+            flex-wrap: wrap; gap: 20px;
+        }
+        .sphere-type-section {
+             border: 1px solid #ddd; padding: 10px; border-radius: 4px;
+             background-color: #fafafa; min-width: 250px; flex-grow: 1;
+        }
+        .sphere-name-input { 
+            font-size: 1.05em; font-weight: bold; border: 1px dashed #ccc; 
+            padding: 4px; width: 95%; margin-bottom: 10px; box-sizing: border-box; 
+            background: #fff; border-radius: 3px;
+        }
+        .sphere-name-input:focus { border: 1px solid #007bff; outline: none; }
+        
+        .sphere-type-section label { font-size: 0.85em; margin-bottom: 3px; }
+        .sphere-type-section input[type="number"], .sphere-type-section input[type="range"] { width: 85%; margin-bottom: 8px; }
+        .sphere-type-section .transparency-label { display: inline-block; width: 50px; font-size: 0.85em; margin-left: 5px; vertical-align: middle; }
+
+        .control-group {
+            border: 1px dashed #ccc; padding: 10px; border-radius: 5px; margin-top: 10px;
+        }
+        .control-group h3 { margin-top: 0; font-size: 1.1em; }
+
+        .control-group:nth-child(2) { grid-column: 1 / -1; }
+
+        .control-group > div:not(.scale-bar-controls-wrapper):not(.camera-btns-wrapper) {
+            display: block; margin-bottom: 10px; width: auto;
+        }
+        .control-group > div:not(.scale-bar-controls-wrapper):not(.camera-btns-wrapper) label,
+        .control-group > div:not(.scale-bar-controls-wrapper):not(.camera-btns-wrapper) input { width: 95%; box-sizing: border-box; }
+        .control-group > div:not(.scale-bar-controls-wrapper):not(.camera-btns-wrapper) input[type="checkbox"] { width: auto; }
+
+        .control-group:nth-child(1) > div {
+            display: inline-block; vertical-align: top; margin-right: 15px; margin-bottom: 10px;
+            min-width: 150px; width: auto;
+        }
+        
+        /* Camera Buttons */
+        .camera-btns-wrapper { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+        .camera-btns-wrapper button { flex: 1; min-width: 70px; padding: 8px; margin: 0; }
+
+        .scale-bar-controls-wrapper {
+            display: flex; flex-direction: row; flex-wrap: wrap; gap: 15px;
+            align-items: center; margin-top: 5px;
+        }
+        .scale-bar-controls-wrapper > div {
+            margin: 0; flex-grow: 1; flex-basis: 130px; min-width: 110px; display: block;
+        }
+
+        #actionButtonsContainer {
+            grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px;
+            margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;
+        }
+        
+        .color-preview { display: inline-block; width: 85%; height: 28px; border: 1px solid #999; vertical-align: middle; border-radius: 4px; cursor: pointer; box-sizing: border-box; margin-bottom: 8px; background-color: #ffffff; }
+        .density-info { font-size: 0.75em; color: #666; margin-top: -8px; margin-bottom: 8px; padding-left: 2px; }
+
+        /* --- Simulation Window Styles --- */
+        .simulation-window {
+            width: 95%; max-width: 1100px; height: 600px; position: relative;
+            border: 1px solid #333; background-color: #111; margin-top: 10px;
+            overflow: hidden;
+        }
+        .simulation-window canvas { display: block; width: 100%; height: 100%; background-color: #FFF; }
+        #simulation-container-2d { background-color: #FFF; }
+
+        /* Overlays */
+        .status-overlay {
+            position: absolute; top: 10px; left: 10px; background: rgba(0, 0, 0, 0.7);
+            color: #fff; padding: 5px 10px; border-radius: 4px; font-size: 0.9em;
+            font-weight: bold; z-index: 5; pointer-events: none;
+        }
+        .legend-overlay {
+            position: absolute; top: 10px; right: 10px; background: rgba(255, 255, 255, 0.9);
+            color: #333; padding: 10px; border-radius: 4px; font-size: 0.85em;
+            z-index: 5; border: 1px solid #ccc; max-width: 250px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            pointer-events: none;
+        }
+        .legend-item { display: flex; align-items: center; margin-bottom: 5px; }
+        .legend-color { width: 14px; height: 14px; border-radius: 50%; margin-right: 8px; border: 1px solid #777; }
+        
+        .error { color: red; font-weight: bold; margin-top: 5px; grid-column: 1 / -1; font-size: 0.9em; }
+        .info-text { font-size: 0.8em; margin-top: -5px; margin-bottom: 10px; color: #555; grid-column: 1 / -1; }
+
+    </style>
+</head>
+<body>
+
+    <h1>3D/2D Nanoparticle & Liquid Packing Simulation</h1>
+
+    <div id="controls">
+        <!-- Simulation Setup -->
+        <div class="control-group">
+            <h3>Simulation Parameters</h3>
+            <div> <label for="boxWidth">Box Width (nm):</label> <input type="number" id="boxWidth" value="1000" min="10" step="10"> </div>
+            <div> <label for="boxDepth">Box Depth (nm):</label> <input type="number" id="boxDepth" value="1000" min="10" step="10"> </div>
+            <div> <label for="gravityY">Gravity (Y):</label> <input type="number" id="gravityY" value="-9.81" step="0.1"> </div>
+            <div> <label for="maxSpheres">Max Particles:</label> <input type="number" id="maxSpheres" value="150" min="10" step="10"> </div>
+            <div> <label for="spawnInterval">Spawn Interval (ms):</label> <input type="number" id="spawnInterval" value="150" min="10" step="10"> </div>
+            <div> 
+                 <input type="checkbox" id="modeToggleCheckbox">
+                 <label for="modeToggleCheckbox" style="display: inline; font-weight: normal;">Enable 2D Mode</label>
+            </div>
+        </div>
+
+        <!-- Particle Definitions -->
+        <div class="control-group">
+             <h3>Nanoparticle Types</h3>
+             <div id="sphereTypesContainer"></div>
+             <div style="grid-column: 1 / -1; margin-top: 10px; display: flex; gap: 10px;">
+                <button id="addSphereTypeButton">Add Particle Type</button>
+                <button id="removeSphereTypeButton">Remove Last Type</button>
+             </div>
+             <p class="info-text" style="margin-top: 10px;"> Opacity 0.0 makes the particle visually invisible (acts like liquid solvent matrix). </p>
+             <div id="sphereTypesError" class="error"></div>
+        </div>
+
+        <!-- Camera Options -->
+        <div class="control-group">
+            <h3>Camera Presets (3D)</h3>
+            <div class="camera-btns-wrapper">
+                <button id="camFrontBtn">Front</button>
+                <button id="camSideBtn">Side</button>
+                <button id="camTopBtn">Top</button>
+                <button id="camIsoBtn">Isometric</button>
+            </div>
+        </div>
+
+        <!-- Scale Bar Options -->
+        <div class="control-group">
+            <h3>Floor Scale Bar</h3>
+            <div class="scale-bar-controls-wrapper">
+                <div>
+                    <!-- Checked by default -->
+                    <input type="checkbox" id="showScaleCheckbox" checked>
+                    <label for="showScaleCheckbox" style="display: inline; font-weight: normal; margin-left: 5px;">Show Scale Bar</label>
+                </div>
+                <div>
+                    <label for="scaleLength">Scale Length (nm):</label>
+                    <input type="number" id="scaleLength" value="500" min="1" step="10">
+                </div>
+                <div>
+                    <label for="scaleLabelXOffset">Label X Offset (3D):</label>
+                    <input type="number" id="scaleLabelXOffset" value="0" step="0.05">
+                </div>
+                <div>
+                    <label for="scaleLabelYOffset">Label Y Offset (3D):</label>
+                    <input type="number" id="scaleLabelYOffset" value="0.1" step="0.05">
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div id="actionButtonsContainer">
+           <button id="startButton">Start / Restart Simulation</button>
+           <button id="toggleSpawnButton" disabled>Pause Spawning</button>
+           <button id="freezePhysicsButton" disabled>Freeze Physics</button>
+           <button id="pauseAllButton" disabled>Pause All</button>
+           <button id="saveParamsButton">Save Parameters</button>
+           <button id="loadParamsButton">Load Parameters</button>
+           <input type="file" id="loadFileInput" accept=".json" style="display: none;">
+           <input type="color" id="globalColorPicker" style="display:none;">
+        </div>
+
+        <div id="generalError" class="error"></div>
+    </div>
+
+    <!-- 3D Simulation Container -->
+    <div id="simulation-container-3d" class="simulation-window">
+        <div id="status-3d" class="status-overlay">Status: Idle</div>
+        <div id="legend-3d" class="legend-overlay"></div>
+        <canvas id="simulationCanvas3D"></canvas>
+    </div>
+
+    <!-- 2D Simulation Container (Initially Hidden) -->
+    <div id="simulation-container-2d" class="simulation-window" style="display: none;">
+        <div id="status-2d" class="status-overlay">Status: Idle</div>
+        <div id="legend-2d" class="legend-overlay"></div>
+        <canvas id="simulationCanvas2D"></canvas>
+    </div>
+
+    <!-- Import maps polyfill -->
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+    <script type="importmap"> { "imports": { "three": "https://unpkg.com/three@0.157.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.157.0/examples/jsm/", "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js" } } </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import * as CANNON from 'cannon-es';
+
+        // --- Constants ---
+        const NM_PER_UNIT = 100;
+        const MAX_REAL_DENSITY_G_CM3 = 22.59;
+        const INTERNAL_DENSITY_MAX = 4000;
+        const spawnHeightFactor = 1.8;
+        const stabilityThreshold = 0.05;
+        const stabilityChecksRequired = 100;
+
+        // --- Helpers ---
+        function gCm3ToInternalDensity(gCm3) {
+            const clampedDensity = Math.max(0, Math.min(gCm3, MAX_REAL_DENSITY_G_CM3));
+            return (clampedDensity / MAX_REAL_DENSITY_G_CM3) * INTERNAL_DENSITY_MAX;
+        }
+        function internalDensityToGCm3(internalDensity) {
+            return (internalDensity / INTERNAL_DENSITY_MAX) * MAX_REAL_DENSITY_G_CM3;
+        }
+
+        // --- Global Variables ---
+        let scene, camera, renderer, controls; // 3D specific
+        let world; // Physics
+        let clock;
+        let spawnIntervalId = null;
+        let animationFrameId = null;
+        let spheresSpawned = 0;
+        let maxSpheres = 150;
+        let spawnIntervalTime = 150;
+        let sphereTypes =[];
+        let boxWidthInternal = 10, boxDepthInternal = 10, boxHeightInternal = 20;
+        let gravityY = -9.81;
+        let physicsObjects =[];
+        let floorMesh = null;
+        let scaleBarObject = null;
+        let isPhysicsFrozen = false, isSpawningPaused = false, isPausedAll = false;
+        let stabilityCounter = 0; let lastDensity = 0;
+        let defaultMaterial, wallMaterial, sphereMaterial;
+        let currentCameraPreset = 'Isometric';
+
+        // 2D Specific
+        let is2DMode = false;
+        let canvas2D, ctx2D;
+        const pixelsPerInternalUnit = 40;
+
+        // DOM Elements
+        const container3D = document.getElementById('simulation-container-3d');
+        const canvas3D = document.getElementById('simulationCanvas3D');
+        const container2D = document.getElementById('simulation-container-2d');
+        const canvas2DElement = document.getElementById('simulationCanvas2D');
+        const status3D = document.getElementById('status-3d');
+        const status2D = document.getElementById('status-2d');
+        const legend3D = document.getElementById('legend-3d');
+        const legend2D = document.getElementById('legend-2d');
+        const modeToggleCheckbox = document.getElementById('modeToggleCheckbox');
+        const showScaleCheckbox = document.getElementById('showScaleCheckbox');
+        const scaleLengthInput = document.getElementById('scaleLength');
+        const scaleLabelXOffsetInput = document.getElementById('scaleLabelXOffset');
+        const scaleLabelYOffsetInput = document.getElementById('scaleLabelYOffset');
+        
+        const camFrontBtn = document.getElementById('camFrontBtn');
+        const camSideBtn = document.getElementById('camSideBtn');
+        const camTopBtn = document.getElementById('camTopBtn');
+        const camIsoBtn = document.getElementById('camIsoBtn');
+
+        const globalColorPicker = document.getElementById('globalColorPicker');
+        const startButton = document.getElementById('startButton');
+        const toggleSpawnButton = document.getElementById('toggleSpawnButton');
+        const freezePhysicsButton = document.getElementById('freezePhysicsButton');
+        const pauseAllButton = document.getElementById('pauseAllButton');
+        const saveParamsButton = document.getElementById('saveParamsButton');
+        const loadParamsButton = document.getElementById('loadParamsButton');
+        const loadFileInput = document.getElementById('loadFileInput');
+        const addSphereTypeButton = document.getElementById('addSphereTypeButton');
+        const removeSphereTypeButton = document.getElementById('removeSphereTypeButton');
+        const boxWidthInput = document.getElementById('boxWidth');
+        const boxDepthInput = document.getElementById('boxDepth');
+        const gravityInput = document.getElementById('gravityY');
+        const maxSpheresInput = document.getElementById('maxSpheres');
+        const spawnIntervalInput = document.getElementById('spawnInterval');
+        const sphereTypesContainer = document.getElementById('sphereTypesContainer');
+        const sphereTypesErrorDiv = document.getElementById('sphereTypesError');
+        const generalErrorDiv = document.getElementById('generalError');
+
+        function init() {
+            clock = new THREE.Clock();
+            setup3DScene();
+            setup2DCanvas();
+            setupEventListeners();
+            setupInitialUI();
+            updateLegend(); // Initial clear legend
+        }
+
+        function setup3DScene() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xeeeeee);
+
+            const aspect = container3D.clientWidth / container3D.clientHeight;
+            camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 2000);
+            
+            renderer = new THREE.WebGLRenderer({ canvas: canvas3D, antialias: true });
+            renderer.setSize(container3D.clientWidth, container3D.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
+            directionalLight.position.set(boxWidthInternal * 1.5, boxHeightInternal * 1.5, boxDepthInternal * 1.0);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048; directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.camera.near = 0.5; directionalLight.shadow.camera.far = boxHeightInternal * 3;
+            const shadowCamSize = Math.max(boxWidthInternal, boxDepthInternal) * 1.5;
+            directionalLight.shadow.camera.left = -shadowCamSize; directionalLight.shadow.camera.right = shadowCamSize;
+            directionalLight.shadow.camera.top = shadowCamSize; directionalLight.shadow.camera.bottom = -shadowCamSize;
+            scene.add(directionalLight); scene.add(directionalLight.target);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; controls.dampingFactor = 0.05;
+            
+            setCameraAngle('Isometric'); // Init position
+        }
+
+        function setup2DCanvas() {
+            canvas2D = canvas2DElement;
+            ctx2D = canvas2D.getContext('2d');
+            canvas2D.width = container2D.clientWidth;
+            canvas2D.height = container2D.clientHeight;
+        }
+
+        function setupEventListeners() {
+            startButton.onclick = startSimulation;
+            toggleSpawnButton.onclick = toggleSpawning;
+            freezePhysicsButton.onclick = toggleFreezePhysics;
+            pauseAllButton.onclick = togglePauseAll;
+            saveParamsButton.onclick = saveParameters;
+            loadParamsButton.onclick = () => loadFileInput.click();
+            loadFileInput.onchange = loadParameters;
+            addSphereTypeButton.onclick = () => addSphereTypeUI();
+            removeSphereTypeButton.onclick = removeSphereTypeUI;
+            showScaleCheckbox.onchange = handleScaleToggle;
+            scaleLengthInput.onchange = handleScaleToggle;
+            scaleLabelXOffsetInput.onchange = update3DScaleBar;
+            scaleLabelYOffsetInput.onchange = update3DScaleBar;
+            modeToggleCheckbox.onchange = handleModeToggle;
+            
+            camFrontBtn.onclick = () => setCameraAngle('Front');
+            camSideBtn.onclick = () => setCameraAngle('Side');
+            camTopBtn.onclick = () => setCameraAngle('Top');
+            camIsoBtn.onclick = () => setCameraAngle('Isometric');
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function setupInitialUI() {
+            addSphereTypeUI({ name: "Polymer Matrix", ratio: 0.7, internalRadius: 0.5, internalDensity: gCm3ToInternalDensity(1.5), color: '#0064ff', transparency: 0.9, aggMin: 1, aggMax: 1, aggDistNm: 0 });
+            addSphereTypeUI({ name: "Ceramic Agglomerate", ratio: 0.3, internalRadius: 1.0, internalDensity: gCm3ToInternalDensity(3.0), color: '#ff3200', transparency: 0.9, aggMin: 3, aggMax: 6, aggDistNm: 0 });
+            updateRemoveButtonState();
+            updateStatusText();
+            toggleSpawnButton.disabled = true; freezePhysicsButton.disabled = true; pauseAllButton.disabled = true;
+            modeToggleCheckbox.checked = false;
+            is2DMode = false;
+        }
+
+        function onWindowResize() {
+            if (!is2DMode) {
+                 if (!renderer || !camera || !container3D) return;
+                 const width = container3D.clientWidth; const height = container3D.clientHeight;
+                 camera.aspect = width / height; camera.updateProjectionMatrix();
+                 renderer.setSize(width, height);
+            } else {
+                 if (!canvas2D || !container2D) return;
+                 canvas2D.width = container2D.clientWidth;
+                 canvas2D.height = container2D.clientHeight;
+            }
+        }
+
+        function handleModeToggle() {
+            is2DMode = modeToggleCheckbox.checked;
+            if (is2DMode) {
+                container3D.style.display = 'none';
+                container2D.style.display = 'block';
+                if (controls) controls.enabled = false;
+                canvas2D.width = container2D.clientWidth;
+                canvas2D.height = container2D.clientHeight;
+                remove3DScaleBarObject();
+            } else {
+                container3D.style.display = 'block';
+                container2D.style.display = 'none';
+                if (controls) controls.enabled = true;
+                onWindowResize();
+                update3DScaleBar();
+            }
+        }
+
+        function handleScaleToggle() {
+            if (!is2DMode) update3DScaleBar();
+        }
+
+        function setCameraAngle(preset) {
+            if (!camera || !controls) return;
+            currentCameraPreset = preset;
+            const dist = Math.max(boxWidthInternal, boxDepthInternal, boxHeightInternal) * 1.5;
+            const targetY = boxHeightInternal * 0.4;
+
+            switch(preset) {
+                case 'Front': camera.position.set(0, targetY, dist); break;
+                case 'Side': camera.position.set(dist, targetY, 0); break;
+                case 'Top': camera.position.set(0, dist * 1.5, 0); break;
+                case 'Isometric': default: camera.position.set(dist * 0.8, dist * 0.8, dist * 0.8); break;
+            }
+            controls.target.set(0, targetY, 0);
+            controls.update();
+        }
+
+        let sphereTypeCounter = 0;
+        function addSphereTypeUI(defaults = {}) {
+            const defaultName = defaults.name || `Particle Type ${sphereTypeCounter + 1}`;
+            const defaultInternalRadius = defaults.internalRadius ?? 0.5;
+            const defaultInternalDensity = defaults.internalDensity ?? gCm3ToInternalDensity(1.0);
+            const defaultColor = defaults.color ?? '#ffffff';
+            const defaultOpacity = defaults.transparency ?? 1.0;
+            const defaultRatio = defaults.ratio ?? 0.5;
+            const defaultAggMin = defaults.aggMin ?? 1;
+            const defaultAggMax = defaults.aggMax ?? 1;
+            const defaultAggDist = defaults.aggDistNm ?? 0.0;
+
+            const displayRadius = defaultInternalRadius * NM_PER_UNIT;
+            const displayDensity = internalDensityToGCm3(defaultInternalDensity);
+
+            sphereTypeCounter++;
+            const section = document.createElement('div');
+            section.className = 'sphere-type-section';
+            section.dataset.id = sphereTypeCounter;
+
+            section.innerHTML = `
+                <input type="text" id="name_${sphereTypeCounter}" class="sphere-name-input" value="${defaultName}">
+                
+                <div> <label for="ratio_${sphereTypeCounter}">Spawn Ratio:</label> <input type="number" id="ratio_${sphereTypeCounter}" class="sphere-ratio" value="${defaultRatio}" min="0.01" step="0.05"> </div>
+                <div> <label for="radius_${sphereTypeCounter}">Radius (nm):</label> <input type="number" id="radius_${sphereTypeCounter}" class="sphere-radius" value="${displayRadius.toFixed(1)}" min="0.1" step="0.1"> </div>
+                
+                <div style="background: #f0f8ff; padding: 5px; border-radius: 4px; margin-bottom: 8px;">
+                    <label><strong>Agglomerate Settings:</strong></label>
+                    <div style="display: flex; gap: 5px; margin-top: 5px;">
+                        <div><label style="font-size:0.8em">Min (X):</label><input type="number" id="aggMin_${sphereTypeCounter}" value="${defaultAggMin}" min="1" step="1"></div>
+                        <div><label style="font-size:0.8em">Max (Y):</label><input type="number" id="aggMax_${sphereTypeCounter}" value="${defaultAggMax}" min="1" step="1"></div>
+                    </div>
+                    <div><label for="aggDist_${sphereTypeCounter}" style="font-size:0.8em">Surface Dist (nm):</label><input type="number" id="aggDist_${sphereTypeCounter}" value="${defaultAggDist.toFixed(1)}" min="0" step="0.1"></div>
+                </div>
+
+                <div> <label for="density_${sphereTypeCounter}">Density (g/cm³):</label> <input type="number" id="density_${sphereTypeCounter}" class="sphere-density" value="${displayDensity.toFixed(2)}" min="0.01" step="0.1"> </div>
+                <div class="density-info">(Max ~${MAX_REAL_DENSITY_G_CM3.toFixed(2)} g/cm³)</div>
+                <div>
+                    <label for="color_${sphereTypeCounter}">Color:</label>
+                    <span id="preview_${sphereTypeCounter}" class="color-preview" style="background-color: ${defaultColor};" data-color="${defaultColor}"></span>
+                </div>
+                <div>
+                    <label for="transparency_${sphereTypeCounter}">Opacity:</label>
+                    <!-- Changed min to 0.0 for invisible liquid capability -->
+                    <input type="range" id="transparency_${sphereTypeCounter}" class="sphere-transparency" min="0.0" max="1.0" step="0.05" value="${defaultOpacity}">
+                    <span class="transparency-label">${defaultOpacity.toFixed(2)}</span>
+                </div>
+            `;
+            sphereTypesContainer.appendChild(section);
+
+            const transparencySlider = section.querySelector(`#transparency_${sphereTypeCounter}`);
+            const transparencyLabel = section.querySelector('.transparency-label');
+            transparencySlider.addEventListener('input', (e) => { transparencyLabel.textContent = parseFloat(e.target.value).toFixed(2); });
+
+            const colorPreview = section.querySelector(`#preview_${sphereTypeCounter}`);
+            colorPreview.addEventListener('click', () => {
+                globalColorPicker.value = colorPreview.dataset.color || '#ffffff';
+                const pickerChangeHandler = (event) => {
+                    const newColor = event.target.value;
+                    colorPreview.style.backgroundColor = newColor; colorPreview.dataset.color = newColor;
+                    globalColorPicker.removeEventListener('input', pickerChangeHandler);
+                    globalColorPicker.removeEventListener('change', pickerCancelHandler);
+                };
+                 const pickerCancelHandler = () => {
+                    globalColorPicker.removeEventListener('input', pickerChangeHandler);
+                    globalColorPicker.removeEventListener('change', pickerCancelHandler);
+                };
+                globalColorPicker.addEventListener('input', pickerChangeHandler);
+                globalColorPicker.addEventListener('change', pickerCancelHandler);
+                globalColorPicker.click();
+            });
+            updateRemoveButtonState();
+        }
+
+        function removeSphereTypeUI() {
+             const sections = sphereTypesContainer.querySelectorAll('.sphere-type-section');
+             if (sections.length > 1) {
+                 sphereTypesContainer.removeChild(sections[sections.length - 1]);
+                 updateRemoveButtonState();
+             }
+        }
+        function updateRemoveButtonState() {
+             const sections = sphereTypesContainer.querySelectorAll('.sphere-type-section');
+             removeSphereTypeButton.disabled = sections.length <= 1;
+        }
+
+        function updateLegend() {
+            if (!sphereTypes || sphereTypes.length === 0) return;
+            let html = '<strong>Legend</strong><hr style="margin:5px 0; border:0; border-top:1px solid #ccc;">';
+            sphereTypes.forEach(type => {
+                const isLiquid = type._ui_opacity === 0;
+                const bgColor = isLiquid ? 'transparent' : type._ui_color;
+                const borderStyle = isLiquid ? '1px dashed #555' : '1px solid #777';
+                html += `
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: ${bgColor}; border: ${borderStyle};"></div>
+                        <span style="${isLiquid ? 'font-style: italic; color: #666;' : ''}">${type.name}</span>
+                    </div>
+                `;
+            });
+            if (legend3D) legend3D.innerHTML = html;
+            if (legend2D) legend2D.innerHTML = html;
+        }
+
+        function startSimulation() {
+            updateStatusText('Initializing...');
+            sphereTypesErrorDiv.textContent = ''; generalErrorDiv.textContent = '';
+            isPhysicsFrozen = false; isSpawningPaused = false; isPausedAll = false;
+
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            stopSpawningInterval();
+            physicsObjects.forEach(obj => {
+                if (obj.mesh) scene.remove(obj.mesh); if (obj.body) world?.removeBody(obj.body);
+            });
+            physicsObjects =[]; spheresSpawned = 0; stabilityCounter = 0; lastDensity = 0;
+            if (world) { world.bodies.filter(b => b.type === CANNON.Body.STATIC).forEach(b => world.removeBody(b)); }
+            if (floorMesh) { scene.remove(floorMesh); floorMesh.geometry.dispose(); floorMesh.material.dispose(); floorMesh = null; }
+            remove3DScaleBarObject();
+
+            try {
+                boxWidthInternal = parseFloat(boxWidthInput.value) / NM_PER_UNIT;
+                boxDepthInternal = parseFloat(boxDepthInput.value) / NM_PER_UNIT;
+                if (isNaN(boxWidthInternal) || boxWidthInternal <= 0) throw new Error("Invalid Box Width.");
+                if (isNaN(boxDepthInternal) || boxDepthInternal <= 0) throw new Error("Invalid Box Depth.");
+                boxHeightInternal = Math.max(5, (boxWidthInternal + boxDepthInternal) * 0.75);
+
+                gravityY = parseFloat(gravityInput.value);
+                maxSpheres = parseInt(maxSpheresInput.value, 10);
+                spawnIntervalTime = parseInt(spawnIntervalInput.value, 10);
+                if (isNaN(gravityY)) throw new Error("Invalid Gravity.");
+                if (isNaN(maxSpheres) || maxSpheres < 1) throw new Error("Invalid Max Particles.");
+                if (isNaN(spawnIntervalTime) || spawnIntervalTime < 10) throw new Error("Invalid Spawn Interval.");
+
+                sphereTypes =[];
+                const sphereSections = sphereTypesContainer.querySelectorAll('.sphere-type-section');
+                if (sphereSections.length === 0) throw new Error("At least one particle type must be defined.");
+
+                let totalRatioInput = 0;
+                sphereSections.forEach((section, index) => {
+                     const id = section.dataset.id;
+                     const typeName = section.querySelector(`#name_${id}`).value || `Type ${index+1}`;
+                     const ratio = parseFloat(section.querySelector(`#ratio_${id}`).value);
+                     const radiusNm = parseFloat(section.querySelector(`#radius_${id}`).value);
+                     const densityGCm3 = parseFloat(section.querySelector(`#density_${id}`).value);
+                     const colorHex = section.querySelector(`#preview_${id}`).dataset.color;
+                     const opacity = parseFloat(section.querySelector(`#transparency_${id}`).value);
+                     
+                     const aggMin = parseInt(section.querySelector(`#aggMin_${id}`).value, 10);
+                     const aggMax = parseInt(section.querySelector(`#aggMax_${id}`).value, 10);
+                     const aggDistNm = parseFloat(section.querySelector(`#aggDist_${id}`).value);
+
+                     if (isNaN(ratio) || ratio <= 0) throw new Error(`Invalid ratio for ${typeName}`);
+                     if (isNaN(radiusNm) || radiusNm <= 0) throw new Error(`Invalid radius (nm) for ${typeName}`);
+                     if (isNaN(densityGCm3) || densityGCm3 < 0) throw new Error(`Invalid density (g/cm³) for ${typeName}`);
+                     if (!colorHex) throw new Error(`Invalid color for ${typeName}`);
+                     if (isNaN(opacity) || opacity < 0 || opacity > 1) throw new Error(`Invalid opacity for ${typeName}`);
+                     if (isNaN(aggMin) || aggMin < 1) throw new Error(`Invalid Agglomerate Min for ${typeName}`);
+                     if (isNaN(aggMax) || aggMax < aggMin) throw new Error(`Invalid Agglomerate Max for ${typeName}`);
+                     if (isNaN(aggDistNm) || aggDistNm < 0) throw new Error(`Invalid Surface Distance for ${typeName}`);
+
+                     const internalRadius = radiusNm / NM_PER_UNIT;
+                     const internalDensity = gCm3ToInternalDensity(densityGCm3);
+                     const rgb = new THREE.Color(colorHex);
+                     const colorRgba = `rgba(${Math.round(rgb.r * 255)}, ${Math.round(rgb.g * 255)}, ${Math.round(rgb.b * 255)}, ${opacity})`;
+
+                     sphereTypes.push({
+                         name: typeName, internalRadius: internalRadius, internalDensity: internalDensity, color: colorRgba,
+                         normalizedRatio: 0, _ui_ratio: ratio, _ui_radius_nm: radiusNm,
+                         _ui_density_gcm3: densityGCm3, _ui_color: colorHex, _ui_opacity: opacity,
+                         aggMin: aggMin, aggMax: aggMax, internalAggDist: aggDistNm / NM_PER_UNIT,
+                         actualSpawned: 0 
+                     });
+                     totalRatioInput += ratio;
+                 });
+
+                 if (Math.abs(totalRatioInput) < 1e-6) throw new Error("Total ratio cannot be zero.");
+                 sphereTypes.forEach(type => type.normalizedRatio = type._ui_ratio / totalRatioInput);
+
+            } catch (e) {
+                const errorTarget = e.message.toLowerCase().includes("sphere") || e.message.toLowerCase().includes("ratio") || e.message.toLowerCase().includes("particle") ? sphereTypesErrorDiv : generalErrorDiv;
+                errorTarget.textContent = `Error: ${e.message}`;
+                updateStatusText('Error in inputs'); console.error("Validation Error:", e);
+                startButton.textContent = "Restart Simulation";
+                toggleSpawnButton.disabled = true; freezePhysicsButton.disabled = true; pauseAllButton.disabled = true;
+                return;
+            }
+
+            setupPhysicsWorld();
+            createVisualBoundaries();
+            updateLegend();
+            handleModeToggle(); 
+            handleScaleToggle(); 
+            setCameraAngle(currentCameraPreset);
+
+            animate();
+            startSpawningInterval();
+
+            startButton.textContent = "Restart Simulation";
+            toggleSpawnButton.disabled = false; toggleSpawnButton.textContent = "Pause Spawning";
+            freezePhysicsButton.disabled = false; freezePhysicsButton.textContent = "Freeze Physics";
+            pauseAllButton.disabled = false; pauseAllButton.textContent = "Pause All";
+            updateStatusText();
+        }
+
+        function setupPhysicsWorld() {
+            world = new CANNON.World({ gravity: new CANNON.Vec3(0, gravityY, 0) });
+            world.broadphase = new CANNON.NaiveBroadphase();
+            world.solver.iterations = 10;
+
+            defaultMaterial = new CANNON.Material("default"); wallMaterial = new CANNON.Material("wall"); sphereMaterial = new CANNON.Material("sphere");
+            const defaultContactMaterial = new CANNON.ContactMaterial(defaultMaterial, defaultMaterial, { friction: 0.4, restitution: 0.2 });
+            const sphereWallContact = new CANNON.ContactMaterial(sphereMaterial, wallMaterial, { friction: 0.1, restitution: 0.3 });
+            const sphereSphereContact = new CANNON.ContactMaterial(sphereMaterial, sphereMaterial, { friction: 0.5, restitution: 0.3 });
+            world.addContactMaterial(defaultContactMaterial); world.addContactMaterial(sphereWallContact); world.addContactMaterial(sphereSphereContact);
+            world.defaultContactMaterial = defaultContactMaterial;
+
+            const groundBody = new CANNON.Body({ mass: 0, material: wallMaterial, shape: new CANNON.Plane() });
+            groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0); world.addBody(groundBody);
+            
+            const wallOptions = { mass: 0, material: wallMaterial }; const wallShape = new CANNON.Plane();
+            const halfW = boxWidthInternal / 2; const halfD = boxDepthInternal / 2;
+            const leftWall = new CANNON.Body(wallOptions); leftWall.addShape(wallShape); leftWall.quaternion.setFromEuler(0, Math.PI / 2, 0); leftWall.position.set(-halfW, 0, 0); world.addBody(leftWall);
+            const rightWall = new CANNON.Body(wallOptions); rightWall.addShape(wallShape); rightWall.quaternion.setFromEuler(0, -Math.PI / 2, 0); rightWall.position.set(halfW, 0, 0); world.addBody(rightWall);
+            const backWall = new CANNON.Body(wallOptions); backWall.addShape(wallShape); backWall.position.set(0, 0, -halfD); world.addBody(backWall);
+            const frontWall = new CANNON.Body(wallOptions); frontWall.addShape(wallShape); frontWall.quaternion.setFromEuler(0, Math.PI, 0); frontWall.position.set(0, 0, halfD); world.addBody(frontWall);
+        }
+
+        function createVisualBoundaries() {
+            if (floorMesh) { scene.remove(floorMesh); floorMesh.geometry.dispose(); floorMesh.material.dispose(); }
+            const floorGeometry = new THREE.PlaneGeometry(boxWidthInternal, boxDepthInternal);
+            const floorMaterial = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, transparent: true, opacity: 0.0, visible: false });
+            floorMesh = new THREE.Mesh(floorGeometry, floorMaterial);
+            floorMesh.rotation.x = -Math.PI / 2; floorMesh.position.y = -0.01;
+            floorMesh.receiveShadow = true;
+            scene.add(floorMesh);
+        }
+
+        function remove3DScaleBarObject() {
+             if (scaleBarObject) {
+                scaleBarObject.traverse(child => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) { if (child.material.map) child.material.map.dispose(); child.material.dispose(); }
+                });
+                scene.remove(scaleBarObject); scaleBarObject = null;
+            }
+         }
+         
+        function update3DScaleBar() {
+            remove3DScaleBarObject();
+            if (is2DMode || !showScaleCheckbox.checked || !scene) return;
+
+            const lengthNm = parseFloat(scaleLengthInput.value);
+            if (isNaN(lengthNm) || lengthNm <= 0) return;
+            const lengthInternal = lengthNm / NM_PER_UNIT;
+            const labelOffsetX = parseFloat(scaleLabelXOffsetInput.value) || 0;
+            const labelOffsetY = parseFloat(scaleLabelYOffsetInput.value) || 0.1;
+
+            scaleBarObject = new THREE.Group();
+            const scaleBarY = 0.05; const scaleBarZOffset = 2.0;
+
+            const lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+            const points =[ new THREE.Vector3(-lengthInternal / 2, 0, 0), new THREE.Vector3(lengthInternal / 2, 0, 0) ];
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+            const line = new THREE.Line(lineGeometry, lineMaterial);
+            line.position.y = scaleBarY;
+
+            const text = `${lengthNm} nm`;
+            const canvas = document.createElement('canvas'); const context = canvas.getContext('2d');
+            const fontSize = 16; context.font = `Bold ${fontSize}px Arial`;
+            const textWidth = context.measureText(text).width;
+            canvas.width = textWidth + 10; canvas.height = fontSize + 5;
+            context.font = `Bold ${fontSize}px Arial`; context.fillStyle = 'rgba(0, 0, 0, 1.0)';
+            context.textAlign = 'center'; context.textBaseline = 'middle';
+            context.fillText(text, canvas.width / 2, canvas.height / 2);
+            
+            const texture = new THREE.CanvasTexture(canvas); texture.needsUpdate = true;
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture, sizeAttenuation: false });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.scale.set(canvas.width * 0.003, canvas.height * 0.003, 1.0);
+            sprite.position.set(labelOffsetX, scaleBarY + labelOffsetY, 0);
+
+            scaleBarObject.add(line); scaleBarObject.add(sprite);
+            scaleBarObject.position.set(0, 0, boxDepthInternal / 2 + scaleBarZOffset);
+            scene.add(scaleBarObject);
+         }
+
+        function drawScaleBar2D() {
+            if (!showScaleCheckbox.checked || !ctx2D) return;
+            const lengthNm = parseFloat(scaleLengthInput.value);
+            if (isNaN(lengthNm) || lengthNm <= 0) return;
+
+            const lengthInternal = lengthNm / NM_PER_UNIT;
+            const lengthPixels = lengthInternal * pixelsPerInternalUnit;
+
+            const canvasWidth = canvas2D.width; const canvasHeight = canvas2D.height;
+            const barY = canvasHeight - 15;
+            const startX = (canvasWidth / 2) - (lengthPixels / 2); const endX = startX + lengthPixels;
+            
+            ctx2D.beginPath(); ctx2D.moveTo(startX, barY); ctx2D.lineTo(endX, barY);
+            ctx2D.strokeStyle = 'black'; ctx2D.lineWidth = 2; ctx2D.stroke();
+
+            ctx2D.fillStyle = 'black'; ctx2D.font = 'bold 12px Arial'; ctx2D.textAlign = 'center';
+            ctx2D.fillText(`${lengthNm} nm`, canvasWidth / 2, barY - 8);
+        }
+
+        function toggleSpawning() {
+            if (isPausedAll) return;
+            if (spheresSpawned >= maxSpheres) { stopSpawningInterval(); return; }
+            if (spawnIntervalId) { stopSpawningInterval(); isSpawningPaused = true; toggleSpawnButton.textContent = "Resume Spawning"; } 
+            else { startSpawningInterval(); isSpawningPaused = false; toggleSpawnButton.textContent = "Pause Spawning"; }
+            updateStatusText();
+        }
+
+        function toggleFreezePhysics() {
+            if (isPausedAll) return;
+            isPhysicsFrozen = !isPhysicsFrozen;
+            freezePhysicsButton.textContent = isPhysicsFrozen ? "Unfreeze Physics" : "Freeze Physics";
+            if (!isPhysicsFrozen) { physicsObjects.forEach(obj => obj.body?.wakeUp()); }
+            updateStatusText();
+        }
+
+        function togglePauseAll() {
+             isPausedAll = !isPausedAll;
+             pauseAllButton.textContent = isPausedAll ? "Resume All" : "Pause All";
+             if (isPausedAll) {
+                 if (!isPhysicsFrozen) { isPhysicsFrozen = true; }
+                 if (spawnIntervalId) { stopSpawningInterval(); }
+                 isSpawningPaused = true;
+                 freezePhysicsButton.disabled = true; freezePhysicsButton.textContent = "Physics Frozen";
+                 toggleSpawnButton.disabled = true; toggleSpawnButton.textContent = "Spawning Paused";
+             } else {
+                 if (isPhysicsFrozen) { isPhysicsFrozen = false; physicsObjects.forEach(obj => obj.body?.wakeUp());}
+                 if (spheresSpawned < maxSpheres) { isSpawningPaused = false; startSpawningInterval(); }
+                 freezePhysicsButton.disabled = false; freezePhysicsButton.textContent = "Freeze Physics";
+                 toggleSpawnButton.disabled = (spheresSpawned >= maxSpheres);
+                 toggleSpawnButton.textContent = spawnIntervalId ? "Pause Spawning" : "Resume Spawning";
+                 if (spheresSpawned >= maxSpheres) toggleSpawnButton.textContent = "Max Reached";
+             }
+              updateStatusText();
+        }
+
+        function stopSpawningInterval() {
+             if (spawnIntervalId) { clearInterval(spawnIntervalId); spawnIntervalId = null; }
+        }
+        function startSpawningInterval() {
+             if (spawnIntervalId || isSpawningPaused || isPausedAll || spheresSpawned >= maxSpheres) return;
+             spawnIntervalId = setInterval(spawnNextSphere, spawnIntervalTime);
+             if (!isPausedAll) { toggleSpawnButton.textContent = "Pause Spawning"; toggleSpawnButton.disabled = false; }
+        }
+
+        function getDensePackingOffsets(numParticles, centerToCenterDistance) {
+            const offsets =[];
+            const dScale = centerToCenterDistance / Math.sqrt(2); 
+            const searchRadius = Math.ceil(Math.pow(numParticles, 1/3)) + 1; 
+
+            for (let x = -searchRadius; x <= searchRadius; x++) {
+                for (let y = -searchRadius; y <= searchRadius; y++) {
+                    for (let z = -searchRadius; z <= searchRadius; z++) {
+                        if ((Math.abs(x) + Math.abs(y) + Math.abs(z)) % 2 === 0) {
+                            offsets.push(new THREE.Vector3(x * dScale, y * dScale, z * dScale));
+                        }
+                    }
+                }
+            }
+            
+            offsets.sort((a, b) => a.lengthSq() - b.lengthSq());
+            const selectedOffsets = offsets.slice(0, numParticles);
+            
+            const centerOfMass = new THREE.Vector3(0, 0, 0);
+            selectedOffsets.forEach(v => centerOfMass.add(v));
+            centerOfMass.divideScalar(numParticles);
+            selectedOffsets.forEach(v => v.sub(centerOfMass));
+
+            return selectedOffsets;
+        }
+
+        function spawnNextSphere() {
+            if (isPausedAll || isSpawningPaused || !world ) { return; }
+            if (spheresSpawned >= maxSpheres) {
+                 stopSpawningInterval(); isSpawningPaused = false;
+                 toggleSpawnButton.disabled = true; toggleSpawnButton.textContent = "Max Reached";
+                 updateStatusText(); return;
+            }
+
+            let selectedType = null; let highestDeficit = -Infinity;
+            for (const type of sphereTypes) {
+                const targetCount = (spheresSpawned + 1) * type.normalizedRatio;
+                const deficit = targetCount - type.actualSpawned;
+                if (deficit > highestDeficit) { highestDeficit = deficit; selectedType = type; }
+            }
+
+            let N = Math.floor(Math.random() * (selectedType.aggMax - selectedType.aggMin + 1)) + selectedType.aggMin;
+            if (spheresSpawned + N > maxSpheres) { N = maxSpheres - spheresSpawned; }
+            if (N <= 0) return;
+
+            const centerToCenterDistance = (selectedType.internalRadius * 2) + selectedType.internalAggDist;
+            const offsets = getDensePackingOffsets(N, centerToCenterDistance);
+
+            const paddingFactor = 1.1; 
+            const aggRadiusEst = selectedType.internalRadius * Math.pow(N, 1/3); 
+            const spawnX = (Math.random() - 0.5) * (boxWidthInternal - aggRadiusEst * 2 * paddingFactor);
+            const spawnZ = (Math.random() - 0.5) * (boxDepthInternal - aggRadiusEst * 2 * paddingFactor);
+            const spawnY = boxHeightInternal * spawnHeightFactor + (Math.random() - 0.5) * 2;
+
+            const sphereShape = new CANNON.Sphere(selectedType.internalRadius);
+            const sphereVolume = (4/3) * Math.PI * Math.pow(selectedType.internalRadius, 3);
+            const singleMass = sphereVolume * selectedType.internalDensity;
+
+            const compoundBody = new CANNON.Body({
+                mass: singleMass * N, position: new CANNON.Vec3(spawnX, spawnY, spawnZ),
+                material: sphereMaterial || defaultMaterial, linearDamping: 0.1, angularDamping: 0.1
+            });
+            
+            const meshGroup = new THREE.Group();
+            let color = new THREE.Color(0xffffff); let opacity = 1.0; let transparent = false;
+            const rgbaMatch = selectedType.color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+            if (rgbaMatch) {
+                color.setRGB(parseInt(rgbaMatch[1])/255, parseInt(rgbaMatch[2])/255, parseInt(rgbaMatch[3])/255);
+                if (rgbaMatch[4] !== undefined) { opacity = parseFloat(rgbaMatch[4]); if (opacity < 1.0) transparent = true; }
+            } else { try { color.set(selectedType._ui_color); } catch (e) {} }
+            
+            const sphereMeshMaterial = new THREE.MeshStandardMaterial({ color: color, metalness: 0.2, roughness: 0.7, transparent: transparent, opacity: opacity });
+            const sphereGeometry = new THREE.SphereGeometry(selectedType.internalRadius, 16, 8);
+            const isInvisible = (opacity <= 0.0);
+
+            for (let i = 0; i < N; i++) {
+                const localOffset = offsets[i];
+                compoundBody.addShape(sphereShape, new CANNON.Vec3(localOffset.x, localOffset.y, localOffset.z));
+                
+                if (!isInvisible) {
+                    const sphereMesh = new THREE.Mesh(sphereGeometry, sphereMeshMaterial);
+                    sphereMesh.castShadow = true; sphereMesh.receiveShadow = true;
+                    sphereMesh.position.set(localOffset.x, localOffset.y, localOffset.z);
+                    meshGroup.add(sphereMesh); 
+                }
+            }
+
+            world.addBody(compoundBody);
+            meshGroup.position.copy(compoundBody.position);
+            scene.add(meshGroup);
+
+            physicsObjects.push({ 
+                mesh: meshGroup, body: compoundBody, isCompound: true, particleCount: N,
+                particleRadius: selectedType.internalRadius, typeColor: selectedType.color,
+                typeOpacity: selectedType._ui_opacity, typeName: selectedType.name
+            });
+            
+            spheresSpawned += N;
+            selectedType.actualSpawned += N;
+            updateStatusText();
+
+            if (spheresSpawned >= maxSpheres) {
+                 stopSpawningInterval(); isSpawningPaused = false;
+                 toggleSpawnButton.disabled = true; toggleSpawnButton.textContent = "Max Reached";
+                 updateStatusText();
+            }
+        }
+
+        function animate() {
+            animationFrameId = requestAnimationFrame(animate);
+            const deltaTime = Math.min(clock.getDelta(), 0.1);
+
+            if (!isPhysicsFrozen && !isPausedAll && world) {
+                world.step(1 / 60, deltaTime, 3);
+                physicsObjects.forEach(obj => {
+                    if (obj.mesh && obj.body) {
+                        obj.mesh.position.copy(obj.body.position);
+                        obj.mesh.quaternion.copy(obj.body.quaternion);
+                    }
+                });
+                if (!is2DMode && spheresSpawned > 0 && !spawnIntervalId && !isSpawningPaused && !isPhysicsFrozen && !isPausedAll && animationFrameId % 5 === 0) {
+                      checkStabilityAndCalculateDensity();
+                 }
+            }
+
+            if (is2DMode) render2D(); else render3D();
+        }
+
+        function render3D() {
+            if (controls) controls.update();
+            if (renderer && scene && camera) renderer.render(scene, camera);
+        }
+
+        function render2D() {
+            if (!ctx2D || !canvas2D) return;
+
+            ctx2D.clearRect(0, 0, canvas2D.width, canvas2D.height);
+            ctx2D.strokeStyle = '#cccccc'; ctx2D.lineWidth = 1;
+            const drawWidth = boxWidthInternal * pixelsPerInternalUnit; const drawHeight = boxDepthInternal * pixelsPerInternalUnit;
+            const originX = (canvas2D.width - drawWidth) / 2; const originY = (canvas2D.height - drawHeight) / 2;
+            ctx2D.strokeRect(originX, originY, drawWidth, drawHeight);
+
+            physicsObjects.forEach(obj => {
+                if (!obj.body) return;
+                
+                if (obj.isCompound) {
+                    if (obj.typeOpacity > 0.0) {
+                        for (let i = 0; i < obj.body.shapes.length; i++) {
+                            const localOffset = obj.body.shapeOffsets[i];
+                            const worldPos = new CANNON.Vec3();
+                            obj.body.quaternion.vmult(localOffset, worldPos);
+                            worldPos.vadd(obj.body.position, worldPos);
+                            
+                            const xCanvas = originX + (worldPos.x + boxWidthInternal / 2) * pixelsPerInternalUnit;
+                            const yCanvas = originY + (worldPos.z + boxDepthInternal / 2) * pixelsPerInternalUnit;
+                            const radiusCanvas = obj.body.shapes[i].radius * pixelsPerInternalUnit;
+
+                            ctx2D.beginPath(); ctx2D.arc(xCanvas, yCanvas, radiusCanvas, 0, Math.PI * 2);
+                            ctx2D.fillStyle = obj.typeColor || 'gray'; ctx2D.fill();
+                        }
+                    }
+                }
+            });
+            drawScaleBar2D();
+        }
+
+        function checkStabilityAndCalculateDensity() {
+            if (!world || physicsObjects.length === 0) return;
+            const dynamicObjects = physicsObjects.filter(obj => obj.body?.type === CANNON.Body.DYNAMIC);
+            if (dynamicObjects.length === 0) return;
+
+            let totalVelocitySq = 0; let minY = Infinity; let maxY = -Infinity; let totalSphereVolumeInternal = 0;
+            dynamicObjects.forEach(obj => {
+                totalVelocitySq += obj.body.velocity.lengthSquared();
+                if (obj.isCompound) {
+                    for (let i = 0; i < obj.body.shapes.length; i++) {
+                        const r = obj.body.shapes[i].radius;
+                        const localOffset = obj.body.shapeOffsets[i];
+                        const worldPos = new CANNON.Vec3();
+                        obj.body.quaternion.vmult(localOffset, worldPos);
+                        worldPos.vadd(obj.body.position, worldPos);
+                        
+                        const y = worldPos.y;
+                        if (y - r < minY) minY = y - r; if (y + r > maxY) maxY = y + r;
+                        totalSphereVolumeInternal += (4/3) * Math.PI * Math.pow(r, 3);
+                    }
+                }
+            });
+            const avgVelocity = Math.sqrt(totalVelocitySq / dynamicObjects.length);
+            minY = Math.max(minY, 0); const packedHeightInternal = maxY - minY;
+
+            let currentDensity = 0;
+            if (packedHeightInternal > 1e-3 && boxWidthInternal > 0 && boxDepthInternal > 0) {
+                const boundingBoxVolumeInternal = boxWidthInternal * boxDepthInternal * packedHeightInternal;
+                currentDensity = totalSphereVolumeInternal / boundingBoxVolumeInternal;
+            }
+            lastDensity = currentDensity;
+
+            if (avgVelocity < stabilityThreshold) stabilityCounter++; else stabilityCounter = 0;
+            updateStatusText();
+        }
+
+        function updateStatusText(overrideMessage = null) {
+             let finalMsg = '';
+             if (overrideMessage) { 
+                 finalMsg = overrideMessage; 
+             } else {
+                 let statusMsg = `Particles: ${spheresSpawned}/${maxSpheres}. `; let state = "Idle";
+                 if (isPausedAll) { state = `Paused All. Density ~${lastDensity.toFixed(4)}`; }
+                 else if (isPhysicsFrozen && isSpawningPaused) { state = `Physics Frozen & Spawning Paused. Density ~${lastDensity.toFixed(4)}`; }
+                 else if (isPhysicsFrozen) { state = `Physics Frozen (Spawning Active). Density ~${lastDensity.toFixed(4)}`; }
+                 else if (spawnIntervalId) { state = `Spawning... Density ~${lastDensity.toFixed(4)}`; }
+                 else if (isSpawningPaused) { state = `Spawning Paused. Density ~${lastDensity.toFixed(4)}`; }
+                 else {
+                     if (spheresSpawned === 0 && !animationFrameId) { state = "Ready. Press Start."; }
+                     else if (spheresSpawned >= maxSpheres || (!spawnIntervalId && !isSpawningPaused)) {
+                         if (!isPhysicsFrozen) {
+                             if (stabilityCounter >= stabilityChecksRequired) { state = `Stable. Final Density: ${lastDensity.toFixed(4)}`; } 
+                             else { state = `Settling... (Stability ${stabilityCounter}/${stabilityChecksRequired}, Density ~${lastDensity.toFixed(4)})`; }
+                         } else { state = `Max Reached. Density ~${lastDensity.toFixed(4)}`; }
+                     } else { state = `Running. Density ~${lastDensity.toFixed(4)}`; }
+                 }
+                 finalMsg = statusMsg + `Status: ${state}`;
+             }
+             if (status3D) status3D.textContent = finalMsg;
+             if (status2D) status2D.textContent = finalMsg;
+         }
+
+        function gatherParameters() {
+             const params = {
+                 boxWidthNm: parseFloat(boxWidthInput.value), boxDepthNm: parseFloat(boxDepthInput.value),
+                 gravityY: parseFloat(gravityInput.value), maxSpheres: parseInt(maxSpheresInput.value, 10),
+                 spawnInterval: parseInt(spawnIntervalInput.value, 10),
+                 showScale: showScaleCheckbox.checked, scaleLengthNm: parseFloat(scaleLengthInput.value) || 500,
+                 scaleLabelXOffset: parseFloat(scaleLabelXOffsetInput.value) || 0, scaleLabelYOffset: parseFloat(scaleLabelYOffsetInput.value) || 0.1,
+                 is2DMode: is2DMode, cameraPreset: currentCameraPreset, sphereTypes:[]
+             };
+             const sphereSections = sphereTypesContainer.querySelectorAll('.sphere-type-section');
+             sphereSections.forEach(section => {
+                 const id = section.dataset.id;
+                 params.sphereTypes.push({
+                     name: section.querySelector(`#name_${id}`).value,
+                     ratio: parseFloat(section.querySelector(`#ratio_${id}`).value),
+                     radiusNm: parseFloat(section.querySelector(`#radius_${id}`).value),
+                     aggMin: parseInt(section.querySelector(`#aggMin_${id}`).value, 10),
+                     aggMax: parseInt(section.querySelector(`#aggMax_${id}`).value, 10),
+                     aggDistNm: parseFloat(section.querySelector(`#aggDist_${id}`).value),
+                     densityGCm3: parseFloat(section.querySelector(`#density_${id}`).value),
+                     color: section.querySelector(`#preview_${id}`).dataset.color,
+                     opacity: parseFloat(section.querySelector(`#transparency_${id}`).value)
+                 });
+             });
+             return params;
+         }
+
+        function saveParameters() {
+              try {
+                 const params = gatherParameters();
+                 const jsonString = JSON.stringify(params, null, 2);
+                 const blob = new Blob([jsonString], { type: 'application/json' });
+                 const url = URL.createObjectURL(blob);
+                 const a = document.createElement('a'); a.href = url; a.download = 'nanoparticle_simulation_params.json';
+                 document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                 URL.revokeObjectURL(url); generalErrorDiv.textContent = '';
+             } catch (error) { console.error("Error saving:", error); generalErrorDiv.textContent = "Error saving: " + error.message; }
+         }
+
+        function loadParameters(event) {
+             const file = event.target.files[0]; if (!file) return;
+             const reader = new FileReader();
+             reader.onload = (e) => {
+                 try {
+                    const params = JSON.parse(e.target.result);
+                    boxWidthInput.value = params.boxWidthNm ?? 1000; boxDepthInput.value = params.boxDepthNm ?? 1000;
+                    gravityInput.value = params.gravityY ?? -9.81; maxSpheresInput.value = params.maxSpheres ?? 150;
+                    spawnIntervalInput.value = params.spawnInterval ?? 150;
+                    showScaleCheckbox.checked = params.showScale ?? true; scaleLengthInput.value = params.scaleLengthNm ?? 500;
+                    scaleLabelXOffsetInput.value = params.scaleLabelXOffset ?? 0; scaleLabelYOffsetInput.value = params.scaleLabelYOffset ?? 0.1;
+                    
+                    modeToggleCheckbox.checked = params.is2DMode ?? false; handleModeToggle();
+                    currentCameraPreset = params.cameraPreset ?? 'Isometric';
+
+                    sphereTypesContainer.innerHTML = ''; sphereTypeCounter = 0;
+                    if (params.sphereTypes?.length > 0) {
+                        params.sphereTypes.forEach(type => {
+                            addSphereTypeUI({
+                                name: type.name, ratio: type.ratio, internalRadius: (type.radiusNm ?? 50) / NM_PER_UNIT,
+                                aggMin: type.aggMin ?? 1, aggMax: type.aggMax ?? 1, aggDistNm: type.aggDistNm ?? 0,
+                                internalDensity: gCm3ToInternalDensity(type.densityGCm3 ?? 1.0),
+                                color: type.color, transparency: type.opacity
+                            });
+                        });
+                    } else { addSphereTypeUI(); }
+
+                    updateRemoveButtonState(); setCameraAngle(currentCameraPreset); generalErrorDiv.textContent = '';
+                    updateStatusText("Parameters loaded. Press Start.");
+                 } catch (error) { console.error("Error loading:", error); generalErrorDiv.textContent = "Error loading: " + error.message; }
+                 finally { loadFileInput.value = null; }
+             };
+             reader.readAsText(file);
+         }
+
+        init();
+    </script>
+</body>
+</html>
